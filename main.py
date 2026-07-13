@@ -7,10 +7,26 @@ import sys
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 import requests
-import logging
+from datetime import datetime
+from colorama import Fore, Back, Style, init
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+def LogInfo(text: str):
+    dt = datetime.now()
+    print(f"[{dt.hour}:{dt.minute}:{dt.second}] {Fore.BLUE}INFO{Style.RESET_ALL}: {text}")
+
+def LogWarning(text: str):
+    dt = datetime.now()
+    print(f"[{dt.hour}:{dt.minute}:{dt.second}] {Fore.YELLOW}WARNING{Style.RESET_ALL}: {text}")
+
+def LogError(text: str):
+    dt = datetime.now()
+    print(f"[{dt.hour}:{dt.minute}:{dt.second}] {Fore.RED}ERROR{Style.RESET_ALL}: {text}")
+
+def ClearConsole():
+    if os.name == "nt":
+        os.system("cls")
+    if os.name == "posix":
+        os.system("clear")
 
 @dataclass
 class AudioFormat:
@@ -209,7 +225,7 @@ class YouTubeAudioExtractor:
 
     def _format_duration(self, seconds: int) -> str:
         if seconds <= 0:
-            return "🔴 LIVE"
+            return "LIVE"
         h = seconds // 3600
         m = (seconds % 3600) // 60
         s = seconds % 60
@@ -222,15 +238,15 @@ class YouTubeAudioExtractor:
         video_id = self.extract_video_id(url)
         if not video_id:
             return None
-        logger.info(f"Extracting audio for video ID: {video_id}")
+        LogInfo(f"Extracting audio for video ID: {video_id}")
 
         player_response = None
         for client in ['WEB', 'ANDROID']:
-            logger.info(f"Trying client: {client}")
+            LogInfo(f"Trying client: {client}")
             resp = self.make_player_request(video_id, client)
             if resp and 'streamingData' in resp:
                 player_response = resp
-                logger.info(f"Success with client: {client}")
+                LogInfo(f"Success with client: {client}")
                 break
 
         if not player_response:
@@ -238,7 +254,7 @@ class YouTubeAudioExtractor:
 
         playability = player_response.get('playabilityStatus', {})
         if playability.get('status') != 'OK':
-            logger.error(f"Not playable: {playability.get('reason')}")
+            LogError(f"Not playable: {playability.get('reason')}")
             return None
 
         track = self.get_track_info(player_response)
@@ -276,14 +292,11 @@ class YouTubeAudioExtractor:
             return result
         return None
 
-
 def find_ffmpeg():
-    """Try to locate ffmpeg.exe in the same directory as this script, then in PATH."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     local_ffmpeg = os.path.join(script_dir, 'ffmpeg.exe')
     if os.path.exists(local_ffmpeg):
         return local_ffmpeg
-    # Check PATH
     for path in os.environ.get('PATH', '').split(os.pathsep):
         exe = os.path.join(path, 'ffmpeg.exe')
         if os.path.exists(exe):
@@ -293,7 +306,7 @@ def find_ffmpeg():
 def convert_with_ffmpeg(audio_url: str, output_format: str = 'mp3', output_file: str = None) -> bool:
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        logger.error("ffmpeg.exe not found. Please place it in the same folder as this script.")
+        LogError("ffmpeg.exe not found. Please place it in the same folder as this script.")
         return False
 
     if output_file is None:
@@ -331,27 +344,26 @@ def convert_with_ffmpeg(audio_url: str, output_format: str = 'mp3', output_file:
             output_file
         ]
 
-    logger.info(f"Running: {' '.join(cmd)}")
+    LogInfo(f"Running: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
-        logger.info(f"Conversion successful. Output: {output_file}")
+        LogInfo(f"Conversion successful. Output: {output_file}")
         return True
     except subprocess.CalledProcessError as e:
-        logger.error(f"ffmpeg failed: {e}")
+        LogError(f"ffmpeg failed: {e}")
         return False
-
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Extract YouTube audio and convert to streamable format.")
-    parser.add_argument('url', nargs='?', help='YouTube URL')
-    parser.add_argument('--convert', choices=['mp3', 'm4a', 'hls'], help='Convert to format using ffmpeg')
-    parser.add_argument('--output', help='Output file name (for single files) or base name (for HLS)')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('url', nargs='?')
+    parser.add_argument('--convert', choices=['mp3', 'm4a', 'hls'])
+    parser.add_argument('--output')
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+        LogInfo("Debug mode enabled (additional info will be shown where applicable)")
 
     url = args.url
     if not url:
@@ -361,38 +373,36 @@ def main():
     result = extractor.extract_audio_url(url)
 
     if not result:
-        print("❌ Failed to extract audio URL.")
+        LogError("Failed to extract audio URL.")
         sys.exit(1)
 
-    print("\n✅ Extraction successful!")
-    print("=" * 60)
-    print(f"📌 Title: {result['title']}")
-    print(f"👤 Artist: {result['author']}")
-    print(f"⏱️ Duration: {result['duration_formatted']}")
-    print(f"📹 Video ID: {result['video_id']}")
-    print("-" * 60)
+    LogInfo("Extraction successful!")
+    LogInfo("=" * 60)
+    LogInfo(f"Title: {result['title']}")
+    LogInfo(f"Artist: {result['author']}")
+    LogInfo(f"Duration: {result['duration_formatted']}")
+    LogInfo(f"Video ID: {result['video_id']}")
+    LogInfo("-" * 60)
 
     if result['type'] == 'direct':
-        print(f"🎵 Format: {result['format_description']}")
-        print(f"📊 Bitrate: {result['bitrate']:,} bps ({result['bitrate'] // 1000} kbps)")
-        print(f"🎧 Quality: {result['audio_quality']}")
+        LogInfo(f"Format: {result['format_description']}")
+        LogInfo(f"Bitrate: {result['bitrate']:,} bps ({result['bitrate'] // 1000} kbps)")
+        LogInfo(f"Quality: {result['audio_quality']}")
     else:
-        print(f"🎵 Format: {result['format_description']}")
+        LogInfo(f"Format: {result['format_description']}")
 
-    print("-" * 60)
-    print(f"🔗 Audio URL: {result['url']}")
+    LogInfo("-" * 60)
+    LogInfo(f"Audio URL: {result['url']}")
 
     if args.convert:
-        print(f"\n🔄 Converting to {args.convert.upper()}...")
+        LogInfo(f"Converting to {args.convert.upper()}...")
         success = convert_with_ffmpeg(result['url'], args.convert, args.output)
         if success:
-            print("✅ Conversion completed.")
+            LogInfo("Conversion completed.")
         else:
-            print("❌ Conversion failed.")
+            LogError("Conversion failed.")
     else:
-        print("\n💡 To convert, run with --convert mp3|m4a|hls")
-        print(f"   Example: py lun.py \"{url}\" --convert mp3")
-
+        pass
 
 if __name__ == "__main__":
     main()
